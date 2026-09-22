@@ -21,16 +21,30 @@ class ApiClient {
 
   static final ApiClient instance = ApiClient._();
 
-  String? _sessionCookie;
-  http.Client get _client => http.Client();
+  String? _accessToken;
+  String? _refreshToken;
 
-  bool get hasSession => _sessionCookie != null;
+  /// Dipanggil saat access token kedaluwarsa; harus me-refresh dan
+  /// return true jika berhasil (token baru dipasang via setAccessToken).
+  Future<bool> Function()? onRefreshToken;
 
-  void setSessionCookie(String? cookie) {
-    _sessionCookie = cookie;
+  /// Dipanggil saat sesi benar-benar mati (refresh gagal) agar app logout.
+  void Function()? onUnauthorized;
+
+  final http.Client _client = http.Client();
+
+  void setAccessToken(String? token) {
+    _accessToken = token;
   }
 
-  String? get sessionCookie => _sessionCookie;
+  void setRefreshToken(String? token) {
+    _refreshToken = token;
+  }
+
+  String? get accessToken => _accessToken;
+  String? get refreshToken => _refreshToken;
+
+  bool get hasSession => _accessToken != null;
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
     final base = AppConfig.baseUrl;
@@ -45,7 +59,7 @@ class ApiClient {
       'Accept': 'application/json',
     };
     if (json) h['Content-Type'] = 'application/json';
-    if (_sessionCookie != null) h['Cookie'] = _sessionCookie!;
+    if (_accessToken != null) h['Authorization'] = 'Bearer $_accessToken';
     return h;
   }
 
@@ -66,9 +80,30 @@ class ApiClient {
     return body;
   }
 
+  /// Kirim request; jika 401 dan allowRefresh, coba refresh token sekali lalu ulangi.
+  Future<http.Response> _sendWithRetry(
+    Future<http.Response> Function(Map<String, String> headers) send, {
+    bool allowRefresh = true,
+  }) async {
+    var res = await send(_headers());
+    if (res.statusCode == 401 && allowRefresh && onRefreshToken != null) {
+      try {
+        final ok = await onRefreshToken!();
+        if (ok) {
+          res = await send(_headers());
+        } else {
+          onUnauthorized?.call();
+        }
+      } catch (_) {
+        onUnauthorized?.call();
+      }
+    }
+    return res;
+  }
+
   Future<Map<String, dynamic>> get(String path, [Map<String, dynamic>? query]) async {
     try {
-      final res = await _client.get(_uri(path, query), headers: _headers());
+      final res = await _sendWithRetry((h) => _client.get(_uri(path, query), headers: h));
       return _decode(res);
     } on ApiException {
       rethrow;
@@ -82,19 +117,16 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> post(String path, Map<String, dynamic> data,
-      {bool captureSession = false}) async {
+      {bool allowRefresh = true}) async {
     try {
-      final res = await _client.post(
-        _uri(path),
-        headers: _headers(json: true),
-        body: jsonEncode(data),
+      final res = await _sendWithRetry(
+        (h) => _client.post(
+          _uri(path),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode(data),
+        ),
+        allowRefresh: allowRefresh,
       );
-      if (captureSession) {
-        final setCookie = res.headers['set-cookie'];
-        if (setCookie != null && setCookie.contains('PHPSESSID')) {
-          _sessionCookie = setCookie.split(';').first;
-        }
-      }
       return _decode(res);
     } on ApiException {
       rethrow;
@@ -107,10 +139,12 @@ class ApiClient {
 
   Future<Map<String, dynamic>> put(String path, Map<String, dynamic> data) async {
     try {
-      final res = await _client.put(
-        _uri(path),
-        headers: _headers(json: true),
-        body: jsonEncode(data),
+      final res = await _sendWithRetry(
+        (h) => _client.put(
+          _uri(path),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode(data),
+        ),
       );
       return _decode(res);
     } on ApiException {
