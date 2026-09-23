@@ -1,0 +1,47 @@
+name: Staging APK Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - staging
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Update staging release
+        run: |
+          gh release delete staging --yes --cleanup-tag || true
+          gh release create staging build/app/outputs/flutter-apk/app-release.apk \
+            --title "Staging Build" \
+            --prerelease \
+            --notes "Staging APK otomatis dari commit: ${{ github.sha }}
+Login: admin / admin123
+Base URL API: http://100.70.141.62/shandev/api"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
