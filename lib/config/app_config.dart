@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppConfig {
   static const String _kBaseUrl = 'base_url';
 
-  static String baseUrl = 'http://10.10.10.100/shandev/api';
+  static String baseUrl = 'http://100.70.141.62/shandev/api';
 
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
