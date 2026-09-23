@@ -35,13 +35,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Update staging release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete staging --yes --cleanup-tag || true
           gh release create staging build/app/outputs/flutter-apk/app-release.apk \
             --title "Staging Build" \
             --prerelease \
-            --notes "Staging APK otomatis dari commit: ${{ github.sha }}
-Login: admin / admin123
-Base URL API: http://100.70.141.62/shandev/api"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            --notes "APK staging otomatis (commit ${{ github.sha }}). Login: admin/admin123. API: http://100.70.141.62/shandev/api"
